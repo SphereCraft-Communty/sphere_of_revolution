@@ -1,0 +1,910 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#050810">
+<title>MAZE</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@700;900&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --cyan: #00f5ff;
+    --pink: #ff006e;
+    --green: #39ff14;
+    --yellow: #ffee00;
+    --bg: #050810;
+    --bg2: #0a0f1e;
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  html {
+    height: 100%;
+    background: var(--bg);
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    width: 100%; height: 100%;
+    min-height: 100dvh;
+    background: var(--bg);
+    color: #fff;
+    font-family: 'Share Tech Mono', monospace;
+    overflow: hidden;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: none;
+  }
+
+  /* Grid background */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image:
+      linear-gradient(rgba(0,245,255,0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,245,255,0.025) 1px, transparent 1px);
+    background-size: 32px 32px;
+    pointer-events: none; z-index: 0;
+  }
+
+  /* Scanlines */
+  body::after {
+    content: '';
+    position: fixed; inset: 0;
+    background: repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(0,0,0,0.05) 3px, rgba(0,0,0,0.05) 4px);
+    pointer-events: none; z-index: 999;
+  }
+
+  /* ====== LAYOUT ====== */
+  #app {
+    position: relative; z-index: 1;
+    display: flex; flex-direction: column;
+    width: 100%; height: 100dvh;
+    align-items: stretch;
+  }
+
+  /* ====== TOP BAR ====== */
+  #topbar {
+    display: flex; align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    padding-top: calc(10px + env(safe-area-inset-top, 0px));
+    background: rgba(5,8,16,0.9);
+    border-bottom: 1px solid rgba(0,245,255,0.15);
+    backdrop-filter: blur(8px);
+    flex-shrink: 0;
+    gap: 8px;
+  }
+
+  #title {
+    font-family: 'Orbitron', monospace;
+    font-size: 18px; font-weight: 900;
+    letter-spacing: 5px;
+    color: var(--cyan);
+    text-shadow: 0 0 10px var(--cyan), 0 0 25px rgba(0,245,255,0.4);
+    animation: flicker 7s ease-in-out infinite;
+    flex-shrink: 0;
+  }
+
+  @keyframes flicker {
+    0%,91%,93%,95%,100% { opacity: 1; }
+    92%,94% { opacity: 0.5; }
+  }
+
+  .stats-row {
+    display: flex; gap: 12px; align-items: center;
+  }
+
+  .stat {
+    display: flex; flex-direction: column; align-items: center; gap: 1px;
+  }
+
+  .stat-label {
+    font-size: 8px; letter-spacing: 1.5px;
+    color: rgba(0,245,255,0.45);
+  }
+
+  .stat-value {
+    font-family: 'Orbitron', monospace;
+    font-size: 15px; font-weight: 700;
+    color: var(--yellow);
+    text-shadow: 0 0 6px var(--yellow);
+    min-width: 44px; text-align: center;
+  }
+
+  #level-badge {
+    font-family: 'Orbitron', monospace;
+    font-size: 10px; letter-spacing: 1.5px;
+    padding: 3px 9px;
+    border: 1px solid var(--pink);
+    color: var(--pink);
+    text-shadow: 0 0 6px var(--pink);
+    box-shadow: 0 0 10px rgba(255,0,110,0.25), inset 0 0 6px rgba(255,0,110,0.08);
+    border-radius: 2px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  /* Progress bar */
+  #progress-bar {
+    height: 2px; width: 100%;
+    background: rgba(0,245,255,0.08);
+    flex-shrink: 0;
+  }
+
+  #progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--cyan), var(--pink));
+    box-shadow: 0 0 6px var(--cyan);
+    transition: width 0.4s ease;
+    width: 0%;
+  }
+
+  /* ====== CANVAS AREA ====== */
+  #maze-wrapper {
+    flex: 1;
+    position: relative;
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
+    background: var(--bg2);
+  }
+
+  #maze-wrapper::after {
+    content: '';
+    position: absolute; inset: 0;
+    background: radial-gradient(ellipse at 50% 50%, rgba(0,245,255,0.03) 0%, transparent 70%);
+    pointer-events: none; z-index: 2;
+  }
+
+  canvas {
+    display: block;
+    image-rendering: pixelated;
+    position: relative; z-index: 1;
+  }
+
+  /* ====== D-PAD CONTROLS ====== */
+  #controls {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center; justify-content: center;
+    padding: 12px 16px;
+    padding-bottom: calc(12px + var(--safe-bottom));
+    background: rgba(5,8,16,0.95);
+    border-top: 1px solid rgba(0,245,255,0.1);
+    gap: 24px;
+  }
+
+  .d-pad {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(3, 1fr);
+    gap: 5px;
+    width: 162px; height: 162px;
+    flex-shrink: 0;
+  }
+
+  .btn {
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(0,245,255,0.07);
+    border: 1px solid rgba(0,245,255,0.2);
+    border-radius: 6px;
+    color: var(--cyan);
+    font-size: 22px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: background 0.08s, box-shadow 0.08s, transform 0.08s;
+    touch-action: none;
+  }
+
+  .btn:active, .btn.pressed {
+    background: rgba(0,245,255,0.22);
+    box-shadow: 0 0 16px rgba(0,245,255,0.45), inset 0 0 8px rgba(0,245,255,0.1);
+    transform: scale(0.91);
+    border-color: rgba(0,245,255,0.5);
+  }
+
+  .btn.center-btn {
+    background: rgba(0,245,255,0.04);
+    border-color: rgba(0,245,255,0.08);
+    font-size: 10px; letter-spacing: 1px;
+    color: rgba(0,245,255,0.25);
+  }
+
+  .btn.empty { visibility: hidden; }
+
+  /* Side info panel (shown only on wide screens) */
+  #side-info {
+    display: none;
+    flex-direction: column; gap: 12px;
+    align-items: center;
+  }
+
+  @media (min-width: 480px) {
+    #side-info { display: flex; }
+  }
+
+  .side-stat {
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    padding: 8px 14px;
+    border: 1px solid rgba(0,245,255,0.12);
+    border-radius: 4px;
+    background: rgba(0,245,255,0.04);
+    min-width: 80px;
+  }
+
+  .side-stat-label {
+    font-size: 8px; letter-spacing: 2px;
+    color: rgba(0,245,255,0.4);
+  }
+
+  .side-stat-value {
+    font-family: 'Orbitron', monospace;
+    font-size: 18px; font-weight: 700;
+  }
+
+  /* ====== OVERLAY ====== */
+  #overlay {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    background: rgba(5,8,16,0.94);
+    backdrop-filter: blur(6px);
+    z-index: 200;
+    gap: 18px;
+    padding: 24px;
+    transition: opacity 0.35s;
+  }
+
+  #overlay.hidden { opacity: 0; pointer-events: none; }
+
+  #overlay-title {
+    font-family: 'Orbitron', monospace;
+    font-size: 30px; font-weight: 900;
+    letter-spacing: 6px;
+    text-align: center;
+    animation: glitch 4s ease-in-out infinite;
+  }
+
+  @keyframes glitch {
+    0%,88%,100% { text-shadow: 0 0 12px currentColor, 0 0 30px currentColor; transform: none; }
+    89% { transform: translateX(-3px); text-shadow: 3px 0 var(--pink), -3px 0 var(--cyan); }
+    91% { transform: translateX(3px); text-shadow: -3px 0 var(--pink), 3px 0 var(--cyan); }
+    93% { transform: none; }
+  }
+
+  #overlay-sub {
+    font-size: 11px; letter-spacing: 2px;
+    color: rgba(255,255,255,0.35);
+    text-align: center;
+    line-height: 2;
+    white-space: pre-line;
+  }
+
+  #overlay-stats {
+    display: none; gap: 20px; flex-wrap: wrap; justify-content: center;
+  }
+
+  .ov-stat {
+    display: flex; flex-direction: column; align-items: center; gap: 5px;
+    padding: 12px 18px;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 4px;
+    background: rgba(255,255,255,0.03);
+    min-width: 90px;
+  }
+
+  .ov-stat-label { font-size: 9px; letter-spacing: 2px; color: rgba(255,255,255,0.3); }
+  .ov-stat-value { font-family: 'Orbitron', monospace; font-size: 24px; font-weight: 700; }
+
+  #start-btn {
+    font-family: 'Orbitron', monospace;
+    font-size: 14px; font-weight: 700;
+    letter-spacing: 4px;
+    padding: 14px 36px;
+    background: transparent;
+    border: 2px solid var(--green);
+    color: var(--green);
+    text-shadow: 0 0 10px var(--green);
+    box-shadow: 0 0 22px rgba(57,255,20,0.3), inset 0 0 10px rgba(57,255,20,0.05);
+    cursor: pointer; border-radius: 3px;
+    transition: all 0.2s;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+
+  #start-btn:active {
+    background: rgba(57,255,20,0.15);
+    transform: scale(0.97);
+    box-shadow: 0 0 35px rgba(57,255,20,0.5);
+  }
+
+  /* Fog hint */
+  #fog-hint {
+    position: absolute;
+    top: 8px; right: 8px;
+    font-size: 9px; letter-spacing: 1px;
+    color: rgba(255,0,110,0.5);
+    border: 1px solid rgba(255,0,110,0.2);
+    padding: 3px 8px;
+    border-radius: 2px;
+    z-index: 3;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="topbar">
+    <div id="title">MAZE</div>
+    <div class="stats-row">
+      <div class="stat">
+        <div class="stat-label">ВРЕМЯ</div>
+        <div class="stat-value" id="timer">00:00</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">ШАГИ</div>
+        <div class="stat-value" id="steps">0</div>
+      </div>
+    </div>
+    <div id="level-badge">LVL <span id="level-num">1</span></div>
+  </div>
+
+  <div id="progress-bar"><div id="progress-fill"></div></div>
+
+  <div id="maze-wrapper">
+    <div id="fog-hint" style="display:none">ТУМАН ВОЙНЫ</div>
+    <canvas id="maze-canvas"></canvas>
+    <div id="overlay">
+      <div id="overlay-title" style="color:var(--cyan)">MAZE</div>
+      <div id="overlay-sub">НАЙДИ ВЫХОД ИЗ ЛАБИРИНТА\nИСПОЛЬЗУЙ ДЖОЙСТИК ИЛИ СВАЙП</div>
+      <div id="overlay-stats">
+        <div class="ov-stat">
+          <div class="ov-stat-label">ВРЕМЯ</div>
+          <div class="ov-stat-value" id="ov-time" style="color:var(--yellow)">00:00</div>
+        </div>
+        <div class="ov-stat">
+          <div class="ov-stat-label">ШАГИ</div>
+          <div class="ov-stat-value" id="ov-steps" style="color:var(--pink)">0</div>
+        </div>
+        <div class="ov-stat">
+          <div class="ov-stat-label">РЕЙТИНГ</div>
+          <div class="ov-stat-value" id="ov-rating" style="color:var(--green)">S</div>
+        </div>
+      </div>
+      <button id="start-btn">[ НАЧАТЬ ]</button>
+    </div>
+  </div>
+
+  <div id="controls">
+    <div id="side-info">
+      <div class="side-stat">
+        <div class="side-stat-label">РЕКОРД</div>
+        <div class="side-stat-value" id="best" style="color:var(--cyan); font-size:14px">--:--</div>
+      </div>
+    </div>
+
+    <div class="d-pad">
+      <div class="btn empty"></div>
+      <div class="btn" id="btn-up">▲</div>
+      <div class="btn empty"></div>
+
+      <div class="btn" id="btn-left">◄</div>
+      <div class="btn center-btn" id="btn-center">✦</div>
+      <div class="btn" id="btn-right">►</div>
+
+      <div class="btn empty"></div>
+      <div class="btn" id="btn-down">▼</div>
+      <div class="btn empty"></div>
+    </div>
+
+    <div id="side-info" style="display:flex">
+      <div class="side-stat">
+        <div class="side-stat-label">УРОВЕНЬ</div>
+        <div class="side-stat-value" id="side-level" style="color:var(--pink); font-size:22px">1</div>
+      </div>
+      <div class="side-stat" style="font-size:10px; letter-spacing:1px; color:rgba(0,245,255,0.3); padding:6px 10px; font-family:'Share Tech Mono',monospace; border-color:transparent; background:transparent; align-items:flex-start; gap:4px;">
+        <span>СВАЙП — ходить</span>
+        <span>ДЖОЙСТИК — ходить</span>
+        <span>✦ — помощь</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ===== CONFIG =====
+const LEVELS = [
+  { cols: 11, rows: 11, label: "INTRO",  fogRadius: 0  },
+  { cols: 15, rows: 13, label: "BASIC",  fogRadius: 0  },
+  { cols: 19, rows: 15, label: "MEDIUM", fogRadius: 5  },
+  { cols: 23, rows: 19, label: "HARD",   fogRadius: 4  },
+  { cols: 27, rows: 23, label: "EXPERT", fogRadius: 4  },
+  { cols: 31, rows: 27, label: "MASTER", fogRadius: 3  },
+  { cols: 35, rows: 31, label: "ELITE",  fogRadius: 3  },
+  { cols: 41, rows: 35, label: "LEGEND", fogRadius: 3  },
+];
+const TOTAL_LEVELS = LEVELS.length;
+
+const canvas = document.getElementById('maze-canvas');
+const ctx = canvas.getContext('2d');
+const overlay = document.getElementById('overlay');
+const timerEl = document.getElementById('timer');
+const stepsEl = document.getElementById('steps');
+const bestEl = document.getElementById('best');
+const levelNumEl = document.getElementById('level-num');
+const sideLevelEl = document.getElementById('side-level');
+const progressFill = document.getElementById('progress-fill');
+const startBtn = document.getElementById('start-btn');
+const ovStats = document.getElementById('overlay-stats');
+const ovTimeEl = document.getElementById('ov-time');
+const ovStepsEl = document.getElementById('ov-steps');
+const ovRatingEl = document.getElementById('ov-rating');
+const overlayTitle = document.getElementById('overlay-title');
+const overlaySub = document.getElementById('overlay-sub');
+const fogHint = document.getElementById('fog-hint');
+const mazeWrapper = document.getElementById('maze-wrapper');
+
+let COLS, ROWS, CELL, FOG_RADIUS;
+let maze = [], visited = [];
+let player = { x: 1, y: 1 };
+let exit = { x: 0, y: 0 };
+let hint = null; // hint path
+let showHint = false;
+let steps = 0;
+let startTime = null;
+let timerInterval = null;
+let gameActive = false;
+let currentLevel = 0;
+let bestTimes = {};
+let trail = [];
+let particles = [];
+let exitPulse = 0;
+let winAnimation = false;
+let winTime = 0;
+
+// ===== MAZE GENERATION =====
+function generateMaze(cols, rows) {
+  const grid = Array.from({ length: rows }, () => Array(cols).fill(1));
+  function carve(x, y) {
+    grid[y][x] = 0;
+    const dirs = shuffle([[0,-2],[0,2],[-2,0],[2,0]]);
+    for (const [dx, dy] of dirs) {
+      const nx = x+dx, ny = y+dy;
+      if (ny > 0 && ny < rows-1 && nx > 0 && nx < cols-1 && grid[ny][nx] === 1) {
+        grid[y+dy/2][x+dx/2] = 0;
+        carve(nx, ny);
+      }
+    }
+  }
+  carve(1, 1);
+  return grid;
+}
+
+function shuffle(a) {
+  for (let i = a.length-1; i > 0; i--) {
+    const j = Math.floor(Math.random()*(i+1));
+    [a[i],a[j]]=[a[j],a[i]];
+  }
+  return a;
+}
+
+// BFS hint path
+function bfsPath(sx, sy, ex, ey) {
+  const q = [[sx, sy]];
+  const prev = {};
+  const key = (x,y) => `${x},${y}`;
+  prev[key(sx,sy)] = null;
+  while (q.length) {
+    const [cx, cy] = q.shift();
+    if (cx === ex && cy === ey) {
+      const path = [];
+      let cur = key(ex,ey);
+      while (cur) { const [px,py] = cur.split(',').map(Number); path.push({x:px,y:py}); cur = prev[cur]; }
+      return path.reverse();
+    }
+    for (const [dx,dy] of [[0,-1],[0,1],[-1,0],[1,0]]) {
+      const nx=cx+dx, ny=cy+dy;
+      if (nx>=0&&nx<COLS&&ny>=0&&ny<ROWS&&maze[ny][nx]===0&&!(key(nx,ny) in prev)) {
+        prev[key(nx,ny)] = key(cx,cy);
+        q.push([nx,ny]);
+      }
+    }
+  }
+  return [];
+}
+
+// ===== INIT =====
+function computeCell() {
+  const wrap = mazeWrapper.getBoundingClientRect();
+  const maxW = wrap.width - 4;
+  const maxH = wrap.height - 4;
+  const cw = Math.floor(maxW / COLS);
+  const ch = Math.floor(maxH / ROWS);
+  return Math.max(10, Math.min(cw, ch, 40));
+}
+
+function initLevel(level) {
+  currentLevel = level;
+  const cfg = LEVELS[Math.min(level, LEVELS.length-1)];
+  COLS = cfg.cols % 2 === 0 ? cfg.cols+1 : cfg.cols;
+  ROWS = cfg.rows % 2 === 0 ? cfg.rows+1 : cfg.rows;
+  FOG_RADIUS = cfg.fogRadius;
+
+  CELL = computeCell();
+  canvas.width = COLS * CELL;
+  canvas.height = ROWS * CELL;
+
+  maze = generateMaze(COLS, ROWS);
+  visited = Array.from({length:ROWS}, ()=>Array(COLS).fill(false));
+
+  player = {x:1,y:1};
+  markVisited(1,1);
+
+  // Find exit at far end
+  let ex = COLS-2, ey = ROWS-2;
+  while (maze[ey][ex] !== 0) { ex--; if(ex<1){ex=COLS-2;ey--;} }
+  exit = {x:ex,y:ey};
+
+  hint = null; showHint = false;
+  trail = [{x:1,y:1,age:0}];
+  particles = [];
+  steps = 0; exitPulse = 0;
+  winAnimation = false;
+  stepsEl.textContent = '0';
+  levelNumEl.textContent = level+1;
+  sideLevelEl.textContent = level+1;
+  progressFill.style.width = ((level/TOTAL_LEVELS)*100)+'%';
+  fogHint.style.display = FOG_RADIUS > 0 ? 'block' : 'none';
+
+  clearInterval(timerInterval);
+  startTime = performance.now();
+  timerInterval = setInterval(updateTimer, 200);
+  gameActive = true;
+}
+
+function markVisited(x, y) {
+  if (x>=0&&x<COLS&&y>=0&&y<ROWS) visited[y][x] = true;
+}
+
+// ===== TIMER =====
+function updateTimer() {
+  if (!startTime || !gameActive) return;
+  const s = Math.floor((performance.now()-startTime)/1000);
+  timerEl.textContent = fmt(s);
+}
+
+function fmt(s) {
+  return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');
+}
+
+function getElapsed() {
+  return startTime ? (performance.now()-startTime)/1000 : 0;
+}
+
+// ===== FOG =====
+function visAlpha(x, y) {
+  if (FOG_RADIUS === 0) return visited[y][x] ? 1 : 0.12;
+  const dx = x-player.x, dy = y-player.y;
+  const dist = Math.sqrt(dx*dx+dy*dy);
+  if (dist > FOG_RADIUS + 1) return visited[y]?.[x] ? 0.12 : 0;
+  return Math.max(visited[y]?.[x] ? 0.12 : 0, 1 - dist / (FOG_RADIUS+0.5));
+}
+
+function markAreaVisited() {
+  const r = FOG_RADIUS > 0 ? FOG_RADIUS : 999;
+  for (let dy=-r; dy<=r; dy++) for (let dx=-r; dx<=r; dx++) {
+    const nx=player.x+dx, ny=player.y+dy;
+    if (nx>=0&&nx<COLS&&ny>=0&&ny<ROWS) visited[ny][nx]=true;
+  }
+}
+
+// ===== DRAW =====
+function draw() {
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.fillStyle='#050810';
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+
+  // Trail
+  for (const t of trail) {
+    const a = (1-t.age/35)*0.28;
+    if (a <= 0) continue;
+    const v = visAlpha(t.x, t.y);
+    if (v <= 0.05) continue;
+    ctx.fillStyle=`rgba(0,245,255,${a*Math.min(v,1)})`;
+    const s=CELL*0.32;
+    ctx.fillRect(t.x*CELL+(CELL-s)/2, t.y*CELL+(CELL-s)/2, s, s);
+  }
+
+  // Hint path
+  if (showHint && hint) {
+    const t = performance.now()/800;
+    for (let i=0; i<hint.length; i++) {
+      const h = hint[i];
+      const va = visAlpha(h.x, h.y);
+      if (va < 0.05) continue;
+      const pulse = 0.4+0.3*Math.sin(t-i*0.3);
+      ctx.fillStyle=`rgba(255,238,0,${pulse*va*0.7})`;
+      const s = CELL*0.25;
+      ctx.fillRect(h.x*CELL+(CELL-s)/2, h.y*CELL+(CELL-s)/2, s, s);
+    }
+  }
+
+  // Cells
+  for (let y=0; y<ROWS; y++) {
+    for (let x=0; x<COLS; x++) {
+      const v = visAlpha(x,y);
+      if (v <= 0) continue;
+      const px=x*CELL, py=y*CELL;
+      if (maze[y][x]===1) {
+        ctx.fillStyle=`rgba(22,34,60,${v})`;
+        ctx.fillRect(px,py,CELL,CELL);
+        if (v > 0.4) {
+          ctx.strokeStyle=`rgba(40,58,100,${v*0.4})`;
+          ctx.lineWidth=0.5;
+          ctx.strokeRect(px+0.5,py+0.5,CELL-1,CELL-1);
+        }
+      } else {
+        ctx.fillStyle=`rgba(8,12,24,${v})`;
+        ctx.fillRect(px,py,CELL,CELL);
+      }
+    }
+  }
+
+  // Exit
+  {
+    const ex=exit.x*CELL, ey=exit.y*CELL;
+    const v = visAlpha(exit.x, exit.y);
+    if (v > 0.05) {
+      exitPulse += 0.07;
+      const pulse = 0.65+0.35*Math.sin(exitPulse);
+      const grd = ctx.createRadialGradient(ex+CELL/2,ey+CELL/2,0,ex+CELL/2,ey+CELL/2,CELL*1.4);
+      grd.addColorStop(0,`rgba(57,255,20,${0.85*pulse*v})`);
+      grd.addColorStop(0.5,`rgba(57,255,20,${0.3*pulse*v})`);
+      grd.addColorStop(1,'rgba(57,255,20,0)');
+      ctx.fillStyle=grd;
+      ctx.fillRect(ex-CELL,ey-CELL,CELL*3,CELL*3);
+
+      ctx.fillStyle=`rgba(57,255,20,${pulse*v})`;
+      const s=CELL*0.6;
+      ctx.fillRect(ex+(CELL-s)/2,ey+(CELL-s)/2,s,s);
+
+      if (CELL >= 14) {
+        ctx.fillStyle=`rgba(5,8,16,${v*0.9})`;
+        ctx.font=`bold ${Math.floor(CELL*0.5)}px monospace`;
+        ctx.textAlign='center'; ctx.textBaseline='middle';
+        ctx.fillText('✦',ex+CELL/2,ey+CELL/2+0.5);
+      }
+    }
+  }
+
+  // Particles
+  for (const p of particles) {
+    ctx.fillStyle=`rgba(${p.r},${p.g},${p.b},${p.life})`;
+    ctx.fillRect(p.x-p.size/2,p.y-p.size/2,p.size,p.size);
+    p.x+=p.vx; p.y+=p.vy; p.vy+=0.12;
+    p.life-=p.decay; p.size*=0.96;
+  }
+  particles = particles.filter(p=>p.life>0.01);
+
+  // Player
+  {
+    const px=player.x*CELL+CELL/2, py=player.y*CELL+CELL/2;
+    const t=performance.now()/1000;
+    const pulse=0.82+0.18*Math.sin(t*5);
+
+    const grd=ctx.createRadialGradient(px,py,0,px,py,CELL*1.3);
+    grd.addColorStop(0,`rgba(0,245,255,${0.28*pulse})`);
+    grd.addColorStop(1,'rgba(0,245,255,0)');
+    ctx.fillStyle=grd;
+    ctx.fillRect(px-CELL*1.3,py-CELL*1.3,CELL*2.6,CELL*2.6);
+
+    const r=CELL*0.28*pulse;
+    ctx.fillStyle='rgba(0,245,255,0.92)';
+    ctx.beginPath(); ctx.arc(px,py,r,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='#fff';
+    ctx.beginPath(); ctx.arc(px,py,r*0.35,0,Math.PI*2); ctx.fill();
+  }
+
+  // Win flash
+  if (winAnimation) {
+    winTime += 0.04;
+    ctx.fillStyle=`rgba(57,255,20,${Math.min(winTime*0.4,0.12)})`;
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+  }
+}
+
+// ===== PARTICLES =====
+function burst(x, y, r, g, b, n=10) {
+  for (let i=0;i<n;i++) {
+    const a=(Math.PI*2*i)/n+Math.random()*0.6;
+    const sp=1.5+Math.random()*3;
+    particles.push({
+      x:x*CELL+CELL/2, y:y*CELL+CELL/2,
+      vx:Math.cos(a)*sp, vy:Math.sin(a)*sp-1.5,
+      r,g,b,
+      life:0.85+Math.random()*0.15,
+      decay:0.022+Math.random()*0.02,
+      size:2.5+Math.random()*3.5,
+    });
+  }
+}
+
+// ===== MOVE =====
+function move(dx, dy) {
+  if (!gameActive||winAnimation) return;
+  const nx=player.x+dx, ny=player.y+dy;
+  if (nx<0||nx>=COLS||ny<0||ny>=ROWS) return;
+  if (maze[ny][nx]===1) { burst(player.x,player.y,255,0,110,4); return; }
+
+  player.x=nx; player.y=ny;
+  markAreaVisited();
+  steps++;
+  stepsEl.textContent=steps;
+  trail.push({x:nx,y:ny,age:0});
+  if (trail.length>40) trail.shift();
+  burst(nx,ny,0,180,255,3);
+
+  // Invalidate hint if used
+  if (showHint && hint) {
+    const hIdx = hint.findIndex(h=>h.x===nx&&h.y===ny);
+    if (hIdx>0) hint.splice(0,hIdx);
+  }
+
+  if (player.x===exit.x && player.y===exit.y) onWin();
+}
+
+// ===== WIN =====
+function onWin() {
+  gameActive=false; winAnimation=true; winTime=0;
+  clearInterval(timerInterval);
+  const elapsed=getElapsed();
+  const key=`lvl_${currentLevel}`;
+  if (!bestTimes[key]||elapsed<bestTimes[key]) {
+    bestTimes[key]=elapsed;
+    bestEl.textContent=fmt(Math.floor(elapsed));
+  }
+  for (let i=0;i<4;i++) setTimeout(()=>{
+    burst(exit.x,exit.y,57,255,20,18);
+    burst(exit.x,exit.y,0,245,255,8);
+  },i*120);
+
+  const rating=getRating(elapsed,steps);
+  ovTimeEl.textContent=fmt(Math.floor(elapsed));
+  ovStepsEl.textContent=steps;
+  ovRatingEl.textContent=rating;
+  ovStats.style.display='flex';
+
+  setTimeout(()=>{
+    const isLast=currentLevel>=TOTAL_LEVELS-1;
+    overlayTitle.textContent=isLast?'ПОБЕДА!':'ПРОЙДЕНО!';
+    overlayTitle.style.color=isLast?'var(--yellow)':'var(--green)';
+    overlaySub.textContent=isLast
+      ? 'ВЫ ПРОШЛИ ВСЕ УРОВНИ!\nРЕЗУЛЬТАТЫ:'
+      : `СЛЕДУЮЩИЙ УРОВЕНЬ:\n${LEVELS[Math.min(currentLevel+1,LEVELS.length-1)].label}`;
+    startBtn.textContent=isLast?'[ ЗАНОВО ]':'[ ДАЛЬШЕ ]';
+    overlay.classList.remove('hidden');
+  },900);
+}
+
+function getRating(time, s) {
+  const max=[60,90,120,180,240,300,360,480][currentLevel]||300;
+  const score=(max-time)/max - s/600;
+  if(score>0.7)return'S';if(score>0.5)return'A';if(score>0.3)return'B';if(score>0.1)return'C';return'D';
+}
+
+// ===== LOOP =====
+function loop() {
+  for (const t of trail) t.age++;
+  draw();
+  requestAnimationFrame(loop);
+}
+
+// ===== KEYBOARD =====
+document.addEventListener('keydown', e=>{
+  const map={
+    ArrowUp:[0,-1],ArrowDown:[0,1],ArrowLeft:[-1,0],ArrowRight:[1,0],
+    w:[0,-1],s:[0,1],a:[-1,0],d:[1,0],
+    W:[0,-1],S:[0,1],A:[-1,0],D:[1,0],
+    h:[0,0],H:[0,0],
+  };
+  if(e.key==='h'||e.key==='H') { toggleHint(); return; }
+  if(map[e.key]) { e.preventDefault(); move(...map[e.key]); }
+});
+
+// ===== D-PAD BUTTONS =====
+function setupBtn(id, dx, dy) {
+  const btn=document.getElementById(id);
+  let iv;
+  const go=()=>move(dx,dy);
+  btn.addEventListener('pointerdown',e=>{
+    e.preventDefault(); go();
+    btn.classList.add('pressed');
+    iv=setInterval(go,130);
+  });
+  const stop=()=>{ btn.classList.remove('pressed'); clearInterval(iv); };
+  btn.addEventListener('pointerup',stop);
+  btn.addEventListener('pointerleave',stop);
+  btn.addEventListener('pointercancel',stop);
+}
+setupBtn('btn-up',0,-1);
+setupBtn('btn-down',0,1);
+setupBtn('btn-left',-1,0);
+setupBtn('btn-right',1,0);
+
+// Center button = hint toggle
+document.getElementById('btn-center').addEventListener('pointerdown',e=>{
+  e.preventDefault(); toggleHint();
+});
+
+function toggleHint() {
+  showHint = !showHint;
+  if (showHint && !hint) {
+    hint = bfsPath(player.x,player.y,exit.x,exit.y);
+  }
+  if (showHint) {
+    hint = bfsPath(player.x,player.y,exit.x,exit.y);
+    document.getElementById('btn-center').style.color='var(--yellow)';
+    document.getElementById('btn-center').style.textShadow='0 0 8px var(--yellow)';
+  } else {
+    document.getElementById('btn-center').style.color='';
+    document.getElementById('btn-center').style.textShadow='';
+  }
+}
+
+// ===== TOUCH SWIPE =====
+let ts = null;
+canvas.addEventListener('touchstart',e=>{ ts={x:e.touches[0].clientX,y:e.touches[0].clientY}; e.preventDefault(); },{passive:false});
+canvas.addEventListener('touchend',e=>{
+  if(!ts) return;
+  const dx=e.changedTouches[0].clientX-ts.x;
+  const dy=e.changedTouches[0].clientY-ts.y;
+  const adx=Math.abs(dx),ady=Math.abs(dy);
+  if(adx<12&&ady<12) return;
+  if(adx>ady) move(dx>0?1:-1,0);
+  else move(0,dy>0?1:-1);
+  ts=null; e.preventDefault();
+},{passive:false});
+
+// ===== START BUTTON =====
+startBtn.addEventListener('click',()=>{
+  const txt=startBtn.textContent;
+  let next = txt.includes('ЗАНОВО') ? 0 : currentLevel+1;
+  if (next>=TOTAL_LEVELS) next=0;
+  ovStats.style.display='none';
+  overlay.classList.add('hidden');
+  overlayTitle.textContent='MAZE';
+  overlayTitle.style.color='var(--cyan)';
+  overlaySub.textContent='НАЙДИ ВЫХОД ИЗ ЛАБИРИНТА\nИСПОЛЬЗУЙ ДЖОЙСТИК ИЛИ СВАЙП';
+  startBtn.textContent='[ НАЧАТЬ ]';
+  initLevel(next);
+});
+
+// ===== RESIZE =====
+let resizeTimer;
+window.addEventListener('resize',()=>{
+  clearTimeout(resizeTimer);
+  resizeTimer=setTimeout(()=>{
+    if (!COLS) return;
+    CELL=computeCell();
+    canvas.width=COLS*CELL;
+    canvas.height=ROWS*CELL;
+  },100);
+});
+
+// ===== START =====
+canvas.width=300; canvas.height=300;
+ctx.fillStyle='#050810'; ctx.fillRect(0,0,300,300);
+initLevel(0);
+overlay.classList.remove('hidden');
+gameActive=false;
+clearInterval(timerInterval);
+timerEl.textContent='00:00';
+markAreaVisited();
+loop();
+</script>
+</body>
+</html>
